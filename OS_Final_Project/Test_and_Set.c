@@ -122,7 +122,7 @@ void *writeToFile(void *ptr){
 	printf("Writer writing\n");
 	fflush(stdout);
 	//simulate writing to file
-	usleep(1000);
+	usleep(1000*1000);
 
 	printf("Writer releasing file\n");
 	fflush(stdout);
@@ -157,7 +157,7 @@ void *readFromFile(void *ptr){
 	printf("Reader reading\n");
 
 	//simulate "reading" the file
-	usleep(1000);
+	usleep(1000*1000);
 
 	//signal other waiting reader threads that they can read
 	printf("Done reading\n");
