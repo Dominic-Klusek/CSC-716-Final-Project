@@ -17,6 +17,7 @@
 
 //global variables containg number of activate readers and writers
 int readerCount = 0;
+int timeToWaitInMS;
 
 sem_t mutex;
 
@@ -37,8 +38,10 @@ int main(int argc, char** argv){
 	srand(time(NULL));
 	char str[20];
 	strcpy(str, argv[1]);
-	int numWriters = atoi(str);
+	timeToWaitInMS = atoi(str);
 	strcpy(str, argv[2]);
+	int numWriters = atoi(str);
+	strcpy(str, argv[3]);
 	int numReaders = atoi(str);
     pthread_t activeTreads[numWriters+numReaders];
     int  iret, i, threadCounter = 0;
@@ -115,14 +118,12 @@ void *writeToFile(void *ptr){
 	struct timespec timeToWait;
 	struct timeval timeNow;
 
-	int ms = rand() % 10000;
-
-	printf("Writer Wait Time: %i\n", ms);
+	printf("Writer Wait Time: %i\n", timeToWaitInMS);
 
 	gettimeofday(&timeNow,NULL);
 
-	timeToWait.tv_sec = time(NULL) + ms / 1000;
-	timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (ms % 1000);
+	timeToWait.tv_sec = time(NULL) + timeToWaitInMS / 1000;
+	timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (timeToWaitInMS % 1000);
 	timeToWait.tv_sec += timeToWait.tv_nsec / (1000 * 1000 * 1000);
     timeToWait.tv_nsec %= (1000 * 1000 * 1000);
 
@@ -158,14 +159,12 @@ void *readFromFile(void *ptr){
 	struct timespec timeToWait;
 	struct timeval timeNow;
 
-	int ms = rand() % 10000;
-
-	printf("Reader Wait Time: %i\n", ms);
+	printf("Reader Wait Time: %i\n", timeToWaitInMS);
 
 	gettimeofday(&timeNow, NULL);
 
-	timeToWait.tv_sec = time(NULL) + ms / 1000;
-    timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (ms % 1000);
+	timeToWait.tv_sec = time(NULL) + timeToWaitInMS / 1000;
+    timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (timeToWaitInMS % 1000);
     timeToWait.tv_sec += timeToWait.tv_nsec / (1000 * 1000 * 1000);
     timeToWait.tv_nsec %= (1000 * 1000 * 1000);
 

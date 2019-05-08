@@ -16,6 +16,8 @@
 #include <stdatomic.h>
 atomic_flag temp = ATOMIC_FLAG_INIT;
 
+int timeToWaitInMS;
+
 //function prototypes
 void *print_message_function(void *ptr);
 void *intialEntryTime(void *ptr);
@@ -29,8 +31,10 @@ int main(int argc, char** argv){
 	srand(time(NULL));
 	char str[20];
 	strcpy(str, argv[1]);
-	int numWriters = atoi(str);
+	timeToWaitInMS = atoi(str);
 	strcpy(str, argv[2]);
+	int numWriters = atoi(str);
+	strcpy(str, argv[3]);
 	int numReaders = atoi(str);
     pthread_t activeTreads[numWriters+numReaders];
     int  iret, i, threadCounter = 0;
@@ -99,22 +103,20 @@ void *writeToFile(void *ptr){
 	fflush(stdout);
 		
 	//calculate the time to wait before ending the request to write to the file
-	struct timespec timeToWait;
+	struct timeval timeBegin;
 	struct timeval timeNow;
 
-	int ms = rand() % 10000;
+	printf("Writer Wait Time: %i\n", timeToWaitInMS);
 
-	printf("Writer Wait Time: %i\n", ms);
-
-	gettimeofday(&timeNow,NULL);
-
-	timeToWait.tv_sec = time(NULL) + ms / 1000;
-	timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (ms % 1000);
-	timeToWait.tv_sec += timeToWait.tv_nsec / (1000 * 1000 * 1000);
-    timeToWait.tv_nsec %= (1000 * 1000 * 1000);
+	gettimeofday(&timeBegin,NULL);
 
 	while(atomic_flag_test_and_set(&temp)){
-
+		gettimeofday(&timeBegin,NULL);
+		if((timeNow.tv_usec - timeBegin.tv_usec % 1000) > timeToWaitInMS){
+			printf("Time waited: %li\n", (timeNow.tv_usec - timeBegin.tv_usec % 10000));
+			printf("Writer waited too long and terminted\n");
+			pthread_exit(pthread_self());
+		}
 	}
 
 	printf("Writer writing\n");
@@ -135,23 +137,21 @@ void *readFromFile(void *ptr){
 	printf("Reader waiting\n");
 	fflush(stdout);
 
-	//calculate the time to wait
-	struct timespec timeToWait;
+	//calculate the time to wait before ending the request to write to the file
+	struct timeval timeBegin;
 	struct timeval timeNow;
 
-	int ms = rand() % 10000;
+	printf("Reader Wait Time: %i\n", timeToWaitInMS);
 
-	printf("Reader Wait Time: %i\n", ms);
-
-	gettimeofday(&timeNow, NULL);
-
-	timeToWait.tv_sec = time(NULL) + ms / 1000;
-    timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (ms % 1000);
-    timeToWait.tv_sec += timeToWait.tv_nsec / (1000 * 1000 * 1000);
-    timeToWait.tv_nsec %= (1000 * 1000 * 1000);
+	gettimeofday(&timeBegin,NULL);
 
 	while(atomic_flag_test_and_set(&temp)){
-
+		gettimeofday(&timeBegin,NULL);
+		if((timeNow.tv_usec - timeBegin.tv_usec % 1000) > timeToWaitInMS){
+			printf("Time waited: %li\n", (timeNow.tv_usec - timeBegin.tv_usec % 1000));
+			printf("Reader waited too long and terminted\n");
+			pthread_exit(pthread_self());
+		}
 	}
 
 	printf("Reader reading\n");
