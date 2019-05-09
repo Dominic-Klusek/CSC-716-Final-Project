@@ -14,22 +14,30 @@
 #include <string.h>
 #include <sys/types.h>
 #include <stdatomic.h>
-atomic_flag temp = ATOMIC_FLAG_INIT;
 
+//atomic flag to act as the global variable for test and set
+atomic_flag temp = ATOMIC_FLAG_INIT;
+atomic_int numberOfReaders = ATOMIC_VAR_INIT(0);
+
+//unique id for each reader/writer thread
 static __thread int uniqueID;
 
+//amount of time for the thread to wait before terminating
 int timeToWaitInMS;
 
 //function prototypes
 void *intialEntryTime(int ptr[2]);
 void *writeToFile(void *ptr);
-void *endWritingToFile(void *ptr);
 void *readFromFile(void *ptr);
-void *endReadingFromFile(void *ptr);
 
 int main(int argc, char** argv){
 	//seed random number generator
 	srand(time(NULL));
+
+	//variables to hold the errore code in creating threads, for loop counter, and the number of threads
+    int  iret, i, threadCounter = 0;
+	
+	//get command line arguments
 	char str[20];
 	strcpy(str, argv[1]);
 	timeToWaitInMS = atoi(str);
@@ -37,35 +45,55 @@ int main(int argc, char** argv){
 	int numWriters = atoi(str);
 	strcpy(str, argv[3]);
 	int numReaders = atoi(str);
-    pthread_t activeTreads[numWriters+numReaders];
-    int  iret, i, threadCounter = 0;
 
+	//create array of threads to be active
+    pthread_t activeTreads[numWriters+numReaders];
+
+	//array to hold passed parameters to the threads
 	int arrWriters[numWriters][2];
 	//create writer threads
 	for(i = 0; i < numWriters; i++){
+		//set passed parameters
 		arrWriters[i][0] = 1;
 		arrWriters[i][1] = i;
+
+		//create thread
 		iret = pthread_create(&activeTreads[threadCounter], NULL, intialEntryTime, arrWriters[i]);
+
+		//check if thread was correctly made
 		if(iret){
         	fprintf(stderr,"Error - pthread_create() return code: %d\n",iret);
         	exit(EXIT_FAILURE);
     	}
+
+		//increment thread counter
 		threadCounter++;
 	}
+
+	//array to hold passed parameters to the threads
 	int arrReaders[numReaders][2];
+
 	//create reader threads
 	for(i = 0; i < numReaders; i++){
+		//set passed parameters
 		arrReaders[i][0] = 0;
 		arrReaders[i][1] = i;
+
+		//create thread
 		iret = pthread_create(&activeTreads[threadCounter], NULL, intialEntryTime, arrReaders[i]);
+
+		//check if thread was correctly made
 		if(iret){
         	fprintf(stderr,"Error - pthread_create() return code: %d\n",iret);
         	exit(EXIT_FAILURE);
-    	}	
+    	}
+
+		//increment thread counter
 		threadCounter++;
 	}
 	
-	for(i = 0; i < numWriters+numReaders; i++){
+	//join all threads
+	for(i = 0; i < threadCounter; i++){
 		pthread_join(activeTreads[i], NULL);
 	}
 
@@ -78,13 +106,13 @@ void *intialEntryTime(int ptr[2]){
 		This function generates the initial wait time before the thread will begin execution
 		and attempt to access the file
 	*/
-
+	//generate random number and then sleep for x milliseconds
 	int randomNumber = rand() % 1000;
-	//printf("Sleeping for %i milliseconds\n", randomNumber);
-	//fflush(stdout);
 	usleep(randomNumber*1000); //doesn't stop other threads from executing
 
+	//store unique identifier
 	uniqueID = ptr[1];
+
 	//if the thread is for a writer then call writeToFile, otherwise call readFromFile
 	if(ptr[0] == 1){
 		writeToFile(NULL);
@@ -97,20 +125,17 @@ void *writeToFile(void *ptr){
 	/*
 		This function will check if there if the writer can begin writing to the file
 		at a given time
-	*/
-	//check if file is free to be written to
-	//print waiting message
-	//printf("Writer waiting\n");
-	fflush(stdout);
-		
-	//calculate the time to wait before ending the request to write to the file
+	*/	
+	//struct to hold the times
 	struct timeval timeBegin;
 	struct timeval timeNow;
 
-	//printf("Writer Wait Time: %i\n", timeToWaitInMS);
-
+	//get the intial tiome
 	gettimeofday(&timeBegin,NULL);
 	
+	//while the atomic flag returns true, get the time of day and compare to when the process started
+	//if time is greater than the time to wait, then exit thread,
+	//else continue checking for flag
 	while(atomic_flag_test_and_set(&temp)){
 		gettimeofday(&timeBegin,NULL);
 		if(((timeNow.tv_usec - timeBegin.tv_usec) % 1000) > timeToWaitInMS){
@@ -120,14 +145,14 @@ void *writeToFile(void *ptr){
 		}
 	}
 
+	//output message stating which writer is writing to the file
 	printf("File is being written by writer thread: %i\n", uniqueID);
-	//printf("Writer writing\n");
 	fflush(stdout);
-	//simulate writing to file
+
+	//simulate writing to the file by sleeping for 1 second
 	usleep(1000*1000);
 
-	//printf("Writer releasing file\n");
-	fflush(stdout);
+	//clear the flag for the next reader/writer
 	atomic_flag_clear(&temp);
 }
 
@@ -135,18 +160,16 @@ void *readFromFile(void *ptr){
 	/*
 		This function will check if the file is free and call reading function when able to
 	*/
-	//if the file is not free, then wait for file to be free
-	//printf("Reader waiting\n");
-	fflush(stdout);
-
-	//calculate the time to wait before ending the request to write to the file
+	//struct to hold the times
 	struct timeval timeBegin;
 	struct timeval timeNow;
 
-	//printf("Reader Wait Time: %i\n", timeToWaitInMS);
-
+	//get the initial time
 	gettimeofday(&timeBegin,NULL);
 
+	//while the atomic flag returns true, get the time of day and compare to when the process started
+	//if time is greater than the time to wait, then exit thread,
+	//else continue checking for flag
 	while(atomic_flag_test_and_set(&temp)){
 		gettimeofday(&timeBegin,NULL);
 		if(((timeNow.tv_usec - timeBegin.tv_usec) % 1000) > timeToWaitInMS){
@@ -154,15 +177,28 @@ void *readFromFile(void *ptr){
 			printf("Reader waited too long and terminted\n");
 			pthread_exit(pthread_self());
 		}
+
+		//if a single reader got past the test and set, then all readers are allowed
+		if((int)atomic_load(&numberOfReaders) > 0){
+			break;
+		}
 	}
+
+	//increment number of readers
+	atomic_fetch_add(&numberOfReaders, 1);
+
+	//output message stating which reader is reading to the file
 	printf("File is being read by reader thread: %i\n", uniqueID);
-	//printf("Reader reading\n");
+	fflush(stdout);
 
 	//simulate "reading" the file
 	usleep(1000*1000);
 
-	//signal other waiting reader threads that they can read
-	//printf("Done reading\n");
-	fflush(stdout);
-	atomic_flag_clear(&temp);
+	//decrement number of readers
+	atomic_fetch_sub(&numberOfReaders, 1);
+
+	//final check to see if flag clearing is necessary
+	if((int)atomic_load(&numberOfReaders) == 0){
+		atomic_flag_clear(&temp);
+	}
 }

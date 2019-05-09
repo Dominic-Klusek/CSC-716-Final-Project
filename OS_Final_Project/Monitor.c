@@ -13,11 +13,11 @@
 #include <time.h>
 #include <sys/types.h>
 
-//global variable to hold wait time for threads
-int timeToWaitInMS;
-
 //unique ID for each writer/reader(same reader and writer can have the same unique id)
 static __thread int uniqueID;
+
+//amount of time for the thread to wait before terminating
+int timeToWaitInMS;
 
 //global variables containg number of activate readers and writers
 int numberOfActiveReaders = 0;
@@ -27,28 +27,27 @@ int numberOfActiveWriters = 0;
 int numberOfWaitingReaders = 0;
 int numberOfWaitingWriters = 0;
 
-//variables to hold our signals
-//int canRead = 0;
-//int canWrite = 0;
+//variables to hold signals to wake the threads
 pthread_cond_t canRead = PTHREAD_COND_INITIALIZER;
 pthread_cond_t canWrite = PTHREAD_COND_INITIALIZER;
 
-//mutex lock for writers
+//mutex lock for readers and writers when accessing the monitor
 pthread_mutex_t readerMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t writerMutex = PTHREAD_MUTEX_INITIALIZER;
 
 //function prototypes
 void *intialEntryTime(int ptr[2]);
 void *writeToFile(void *ptr);
-void *endWritingToFile(void *ptr);
 void *readFromFile(void *ptr);
-void *endReadingFromFile(void *ptr);
 
 int main(int argc, char** argv){
 	//seed random number generator
 	srand(time(NULL));
 
-	//character array to read command line arguments
+	//variables to hold the errore code in creating threads, for loop counter, and the number of threads
+    int  iret, i, threadCounter = 0;
+	
+	//get command line arguments
 	char str[20];
 	strcpy(str, argv[1]);
 	timeToWaitInMS = atoi(str);
@@ -56,38 +55,56 @@ int main(int argc, char** argv){
 	int numWriters = atoi(str);
 	strcpy(str, argv[3]);
 	int numReaders = atoi(str);
-    pthread_t activeTreads[numWriters+numReaders];
-    int  iret, i, threadCounter = 0;
 
+	//create array of threads to be active
+    pthread_t activeTreads[numWriters+numReaders];
+
+	//create Writer Threads
+	//array to hold passed parameters to the threads
 	int arrWriters[numWriters][2];
 	//create writer threads
 	for(i = 0; i < numWriters; i++){
+		//set passed parameters
 		arrWriters[i][0] = 1;
 		arrWriters[i][1] = i;
+
+		//create thread
 		iret = pthread_create(&activeTreads[threadCounter], NULL, intialEntryTime, arrWriters[i]);
+
+		//check if thread was correctly made
 		if(iret){
         	fprintf(stderr,"Error - pthread_create() return code: %d\n",iret);
         	exit(EXIT_FAILURE);
     	}
+
+		//increment thread counter
 		threadCounter++;
 	}
 
+	//create Reader Threads
+	//array to hold passed parameters to the threads
 	int arrReaders[numReaders][2];
+
 	//create reader threads
 	for(i = 0; i < numReaders; i++){
+		//set passed parameters
 		arrReaders[i][0] = 0;
 		arrReaders[i][1] = i;
+
+		//create thread
 		iret = pthread_create(&activeTreads[threadCounter], NULL, intialEntryTime, arrReaders[i]);
+
+		//check if thread was correctly made
 		if(iret){
         	fprintf(stderr,"Error - pthread_create() return code: %d\n",iret);
         	exit(EXIT_FAILURE);
-    	}	
+    	}
+
+		//increment thread counter
 		threadCounter++;
 	}
-    /* Wait till threads are complete before main continues. Unless we  */
-    /* wait we run the risk of executing an exit which will terminate   */
-    /* the process and all threads before the threads have completed.   */
-	
+
+	//join all threads
 	for(i = 0; i < numWriters+numReaders; i++){
 		pthread_join(activeTreads[i], NULL);
 	}
@@ -101,13 +118,13 @@ void *intialEntryTime(int ptr[2]){
 		This function generates the initial wait time before the thread will begin execution
 		and attempt to access the file
 	*/
-
+	//generate random number and then sleep for x milliseconds
 	int randomNumber = rand() % 1000;
-	//printf("Sleeping for %i milliseconds\n", randomNumber);
-	//fflush(stdout);
 	usleep(randomNumber*1000); //doesn't stop other threads from executing
 
+	//store unique identifier
 	uniqueID = ptr[1];
+
 	//if the thread is for a writer then call writeToFile, otherwise call readFromFile
 	if(ptr[0] == 1){
 		writeToFile(NULL);
@@ -121,30 +138,25 @@ void *writeToFile(void *ptr){
 		This function will check if there if the writer can begin writing to the file
 		at a given time
 	*/
-	//check if file is free to be written to
+	//Writer Monitor to ensure that writers only access the file when it is avaiable
 	if(numberOfActiveWriters > 0 || numberOfActiveReaders > 0){
-		//print waiting message
-		//printf("Writer waiting\n");
-		fflush(stdout);
-		
-		//enter the waiting queue, and wait for condition canWrite to be true
+		//increment number of waiting writers
 		++numberOfWaitingWriters;
 		
-		//calculate the time to wait
+		//struct to hold the times
 		struct timespec timeToWait;
 		struct timeval timeNow;
 
-		//printf("Writer Wait Time: %i\n", timeToWaitInMS);
-
+		//get the initial time
 		gettimeofday(&timeNow,NULL);
 
+		//calculate time to wait
 		timeToWait.tv_sec = time(NULL) + timeToWaitInMS / 1000;
     	timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (timeToWaitInMS % 1000);
     	timeToWait.tv_sec += timeToWait.tv_nsec / (1000 * 1000 * 1000);
     	timeToWait.tv_nsec %= (1000 * 1000 * 1000);
 
-		//timeToWait.tv_nsec = timeNow.tv_usec * 1000 + (ms % 1000) * 1000000;
-
+		//wait for the file to become available
 		int n = pthread_cond_timedwait(&canWrite, &writerMutex, &timeToWait);
 		
 		//check if the thread got into the process quick enough, or cancelled the job
@@ -152,6 +164,7 @@ void *writeToFile(void *ptr){
 			printf("Writer waited too long and cancelled job\n");
 			//decrement number of waiting writers
 			--numberOfWaitingWriters;
+
 			//check to see what message to broadcast(if any)
 			if(numberOfWaitingReaders > 0 && numberOfActiveWriters == 0){
 				pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
@@ -164,16 +177,16 @@ void *writeToFile(void *ptr){
 			pthread_exit(pthread_self());
 		}
 
+		//decrement the number of waiting writers
 		--numberOfWaitingWriters;
 	}
 
 	//set the number of writers flag
 	numberOfActiveWriters = 1;
 
-	//printf("Writer writing\n");
+	printf("File is being written by writer thread: %i\n", uniqueID);
 	fflush(stdout);
 
-	printf("File is being written by writer thread: %i\n", uniqueID);
 	//simulate "writing" the file
 	usleep(1000*1000);
 	
@@ -189,42 +202,34 @@ void *writeToFile(void *ptr){
 		pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
 		pthread_cond_signal(&canWrite);
 	}
-	//printf("Releasing file\n");
-	fflush(stdout);
-	//call function to release file
-	//endWritingToFile(NULL);
 }
 
 void *readFromFile(void *ptr){
 	/*
 		This function will check if the file is free and call reading function when able to
 	*/
-	//if the file is not free, then wait for file to be free
+	//Reader Monitor to ensure that readers only access the file when it is avaiable
 	if(numberOfActiveWriters > 0 || numberOfWaitingWriters > 0){
-		//printf("Reader waiting\n");
-		fflush(stdout);
 		//increment number of waiting readers
 		++numberOfWaitingReaders;
 		
-		//calculate the time to wait
+		//struct to hold the times
 		struct timespec timeToWait;
 		struct timeval timeNow;
 
-		//printf("Writer Wait Time: %i\n", timeToWaitInMS);
-
+		//get the initial time
 		gettimeofday(&timeNow,NULL);
 
+		//calculate time to wait
 		timeToWait.tv_sec = time(NULL) + timeToWaitInMS / 1000;
     	timeToWait.tv_nsec = timeNow.tv_usec * 1000 + 1000 * 1000 * (timeToWaitInMS % 1000);
     	timeToWait.tv_sec += timeToWait.tv_nsec / (1000 * 1000 * 1000);
     	timeToWait.tv_nsec %= (1000 * 1000 * 1000);
 
-		//timeToWait.tv_nsec = timeNow.tv_usec * 1000 + (ms % 1000) * 1000000;
-		
+		//wait for the file to become available
 		int n = pthread_cond_timedwait(&canRead, &readerMutex, &timeToWait);
 		
 		//check if the thread got into the process quick enough, or cancelled the job
-		printf("N = %i\n", n);
 		if(n != 0){
 			printf("Reader waited too long and cancelled job\n");
 			//decrement number of waiting writers
@@ -241,38 +246,31 @@ void *readFromFile(void *ptr){
 			pthread_exit(pthread_self());
 		}
 		
-		//wait on condition
-		//pthread_cond_wait(&canRead, &readerMutex);
-		//pthread_mutex_unlock(&readerMutex); //unlcok the reader mutex to allow for readers later on to access it
-		//remove from waiting queue
+		//decrement the number of waiting readers
 		--numberOfWaitingReaders;
-		
-		//printf("Reader is no longer waiting\n");
-		fflush(stdout);
 	}
 	
 	//increment number of active Readers
 	++numberOfActiveReaders;
-	//printf("Reader reading\n");
 
 	printf("File is being read by reader thread: %i\n", uniqueID);
+	fflush(stdout);
 
 	//signal other waiting reader threads that they can read
 	if(numberOfWaitingReaders > 0){
 		pthread_mutex_unlock(&readerMutex);
 		pthread_cond_broadcast(&canRead);
-		//printf("Told other reader to read\n");
 		fflush(stdout);
 	}
 
-	//simulate reading
-	usleep(1000*1000); //simulate "reading" the file
+	//simulate "reading" the file
+	usleep(1000*1000);
 	
-	//printf("Done reading\n");
-	fflush(stdout);
 	
 	//decrement number of waiting readers
 	--numberOfActiveReaders;
+
+	//signal writers to write if there are no active readers or writers
 	if(numberOfActiveReaders == 0 && numberOfWaitingWriters > 0){
 		pthread_cond_signal(&canWrite);
 	}
