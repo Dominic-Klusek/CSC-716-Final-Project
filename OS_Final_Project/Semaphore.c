@@ -157,6 +157,9 @@ void *writeToFile(void *ptr){
 	//wait for semaphore to become available
 	int n = sem_timedwait(&mutex, &timeToWait);
 
+	//lock reader mutex so that readers do not read at the same time as a writer
+	pthread_mutex_lock(&readerMutex);
+
 	//if writer could not get file in time, then exit
 	if(n != 0){
 		printf("Writer waited too long and exited\n");
@@ -170,9 +173,11 @@ void *writeToFile(void *ptr){
 	//simulate writing to file
 	usleep(1000*1000);
 
+	//unlock reader mutex, and signal reader that they can read
 	//add the resource back to the pool anc signal that readers can also read
-	sem_post(&mutex);
+	pthread_mutex_unlock(&readerMutex);
 	pthread_cond_signal(&canRead);
+	sem_post(&mutex);
 }
 
 void *readFromFile(void *ptr){
