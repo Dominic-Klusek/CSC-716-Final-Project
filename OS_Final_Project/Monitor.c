@@ -10,7 +10,6 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <time.h>
 #include <sys/types.h>
 
 //unique ID for each writer/reader(same reader and writer can have the same unique id)
@@ -109,7 +108,6 @@ int main(int argc, char** argv){
 		pthread_join(activeTreads[i], NULL);
 	}
 
-	printf("Didn't crash early\n");
     return 0;
 }
 
@@ -165,12 +163,12 @@ void *writeToFile(void *ptr){
 			//decrement number of waiting writers
 			--numberOfWaitingWriters;
 
+			pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
+
 			//check to see what message to broadcast(if any)
 			if(numberOfWaitingReaders > 0 && numberOfActiveWriters == 0){
-				pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
 				pthread_cond_broadcast(&canRead);
 			} else if(numberOfWaitingWriters > 0 && numberOfActiveWriters == 0){
-				pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
 				pthread_cond_signal(&canWrite);
 			}
 			
@@ -193,13 +191,13 @@ void *writeToFile(void *ptr){
 	//set number of activate Writers to 0
 	numberOfActiveWriters = 0;
 
+	pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
+
 	//check if there are waiting readers, if there are then signal readers to begin reading
 	//otherwise let another writer write if they are waiting
 	if(numberOfWaitingReaders > 0){
-		pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
 		pthread_cond_broadcast(&canRead);
 	} else if(numberOfWaitingWriters > 0){
-		pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
 		pthread_cond_signal(&canWrite);
 	}
 }
@@ -234,12 +232,13 @@ void *readFromFile(void *ptr){
 			printf("Reader waited too long and cancelled job\n");
 			//decrement number of waiting writers
 			--numberOfWaitingReaders;
+
+			pthread_mutex_unlock(&readerMutex); //unlcok the writer mutex to allow for writers later on to access it
+
 			//check to see what message to broadcast(if any)
 			if(numberOfWaitingReaders > 0 && numberOfActiveWriters == 0){
-				pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
 				pthread_cond_broadcast(&canRead);
 			} else if(numberOfWaitingWriters > 0 && numberOfActiveWriters == 0){
-				pthread_mutex_unlock(&writerMutex); //unlcok the writer mutex to allow for writers later on to access it
 				pthread_cond_signal(&canWrite);
 			}
 			
@@ -250,18 +249,18 @@ void *readFromFile(void *ptr){
 		--numberOfWaitingReaders;
 	}
 	
-	//increment number of active Readers
-	++numberOfActiveReaders;
-
-	printf("File is being read by reader thread: %i\n", uniqueID);
-	fflush(stdout);
-
 	//signal other waiting reader threads that they can read
 	if(numberOfWaitingReaders > 0){
 		pthread_mutex_unlock(&readerMutex);
 		pthread_cond_broadcast(&canRead);
 		fflush(stdout);
 	}
+
+	//increment number of active Readers
+	++numberOfActiveReaders;
+
+	printf("File is being read by reader thread: %i\n", uniqueID);
+	fflush(stdout);
 
 	//simulate "reading" the file
 	usleep(1000*1000);

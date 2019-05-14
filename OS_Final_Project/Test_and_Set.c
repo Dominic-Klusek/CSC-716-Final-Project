@@ -10,13 +10,11 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <time.h>
 #include <string.h>
-#include <sys/types.h>
 #include <stdatomic.h>
 
 //atomic flag to act as the global variable for test and set
-atomic_flag temp = ATOMIC_FLAG_INIT;
+atomic_flag lock = ATOMIC_FLAG_INIT;
 atomic_int numberOfReaders = ATOMIC_VAR_INIT(0);
 
 //unique id for each reader/writer thread
@@ -97,7 +95,6 @@ int main(int argc, char** argv){
 		pthread_join(activeTreads[i], NULL);
 	}
 
-	printf("Didn't crash early\n");
     return 0;
 }
 
@@ -136,10 +133,10 @@ void *writeToFile(void *ptr){
 	//while the atomic flag returns true, get the time of day and compare to when the process started
 	//if time is greater than the time to wait, then exit thread,
 	//else continue checking for flag
-	while(atomic_flag_test_and_set(&temp)){
-		gettimeofday(&timeBegin,NULL);
-		if(((timeNow.tv_usec - timeBegin.tv_usec) % 1000) > timeToWaitInMS){
-			printf("Time waited: %li\n", (timeNow.tv_usec - timeBegin.tv_usec % 10000));
+	while(atomic_flag_test_and_set(&lock)){
+		gettimeofday(&timeNow,NULL);
+
+		if((((timeNow.tv_sec - timeBegin.tv_sec)*1000000L+timeNow.tv_usec) - timeBegin.tv_usec) > timeToWaitInMS*1000){
 			printf("Writer waited too long and terminted\n");
 			pthread_exit(pthread_self());
 		}
@@ -153,7 +150,7 @@ void *writeToFile(void *ptr){
 	usleep(1000*1000);
 
 	//clear the flag for the next reader/writer
-	atomic_flag_clear(&temp);
+	atomic_flag_clear(&lock);
 }
 
 void *readFromFile(void *ptr){
@@ -170,10 +167,10 @@ void *readFromFile(void *ptr){
 	//while the atomic flag returns true, get the time of day and compare to when the process started
 	//if time is greater than the time to wait, then exit thread,
 	//else continue checking for flag
-	while(atomic_flag_test_and_set(&temp)){
-		gettimeofday(&timeBegin,NULL);
-		if(((timeNow.tv_usec - timeBegin.tv_usec) % 1000) > timeToWaitInMS){
-			printf("Time waited: %li\n", (timeNow.tv_usec - timeBegin.tv_usec % 1000));
+	while(atomic_flag_test_and_set(&lock)){
+		gettimeofday(&timeNow,NULL);
+
+		if((((timeNow.tv_sec - timeBegin.tv_sec)*1000000L+timeNow.tv_usec) - timeBegin.tv_usec) > timeToWaitInMS*1000){
 			printf("Reader waited too long and terminted\n");
 			pthread_exit(pthread_self());
 		}
@@ -199,6 +196,6 @@ void *readFromFile(void *ptr){
 
 	//final check to see if flag clearing is necessary
 	if((int)atomic_load(&numberOfReaders) == 0){
-		atomic_flag_clear(&temp);
+		atomic_flag_clear(&lock);
 	}
 }

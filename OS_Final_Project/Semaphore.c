@@ -10,9 +10,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <time.h>
 #include <string.h>
-#include <sys/types.h>
 #include <semaphore.h>
 
 //global variables containg number of activate readers
@@ -106,13 +104,12 @@ int main(int argc, char** argv){
 		//increment thread counter
 		threadCounter++;
 	}
-	
+
 	//join all threads
 	for(i = 0; i < threadCounter; i++){
 		pthread_join(activeTreads[i], NULL);
 	}
 	
-	printf("Didn't crash early\n");
     return 0;
 }
 
@@ -157,14 +154,14 @@ void *writeToFile(void *ptr){
 	//wait for semaphore to become available
 	int n = sem_timedwait(&mutex, &timeToWait);
 
-	//lock reader mutex so that readers do not read at the same time as a writer
-	pthread_mutex_lock(&readerMutex);
-
 	//if writer could not get file in time, then exit
 	if(n != 0){
 		printf("Writer waited too long and exited\n");
 		pthread_exit(pthread_self());
 	}
+
+	//lock reader mutex so that readers do not read at the same time as a writer
+	pthread_mutex_lock(&readerMutex);
 
 	//output message stating which reader is reading to the file
 	printf("File is being written by writer thread: %i\n", uniqueID);
@@ -176,7 +173,7 @@ void *writeToFile(void *ptr){
 	//unlock reader mutex, and signal reader that they can read
 	//add the resource back to the pool anc signal that readers can also read
 	pthread_mutex_unlock(&readerMutex);
-	pthread_cond_signal(&canRead);
+	pthread_cond_broadcast(&canRead);
 	sem_post(&mutex);
 }
 
@@ -219,11 +216,11 @@ void *readFromFile(void *ptr){
 	printf("File is being read by reader thread: %i\n", uniqueID);
 	fflush(stdout);
 
-	//unlock mutex for other readers, but don't signal them to wake yet
 	pthread_mutex_unlock(&readerMutex);
 
 	//first reader locks writers from writing, and signals other waiting readers to read
 	if(readerCount == 1){
+		//unlock mutex for other readers, but don't signal them to wake yet
 		sem_wait(&mutex);
 		pthread_cond_broadcast(&canRead);
 	}

@@ -1,9 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include<unistd.h>
-#include<sys/types.h>
-#include<sys/wait.h>
+#include <unistd.h>
 
 int main(int argc, char** argv){
 	if(argc != 5){
@@ -20,12 +18,14 @@ int main(int argc, char** argv){
 	strcpy(str, argv[3]);
 	int numReaders = atoi(str);
 
-	printf("String: %s\n", argv[4]);
 	if(strcmp(argv[4], "Semaphore") == 0){
+		printf("Method: Semaphore\n");
 		execve("Semaphore", (char **)argv, NULL);
 	} else if(strcmp(argv[4], "Monitor") == 0){
+		printf("Method: Monitor\n");
 		execve("Monitor", (char **)argv, NULL);
 	} else{
+		printf("Method: Test and Set\n");
 		execve("Test", (char **)argv, NULL);
 	}
 }
